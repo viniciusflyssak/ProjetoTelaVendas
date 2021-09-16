@@ -274,6 +274,7 @@ begin
         end;
       except
         DM.Connection.Rollback;
+        Pedido.ID_Pedido := RetornaIDPedido - 1;
         AtualizaGrid;
         raise Exception.Create('Erro ao salvar o pedido. Tente Novamente.');
       end;
@@ -282,6 +283,8 @@ begin
       FreeAndNil(qry);
     end;
   end;
+  edtNumeroPedido.Text := IntToStr(Pedido.ID_Pedido);
+  CarregarPedido;
 end;
 
 procedure TfrmPrincipal.btnPesquisaClienteClick(Sender: TObject);
@@ -596,7 +599,7 @@ begin
     if bCancelar then
       CancelarPedido;
   end;
-  if (edtNumeroPedido.Text = '') and (Key = #13) then
+  if ((edtNumeroPedido.Text = '') and (Key = #13)) or (Key = #$1B) then
     pnlPedidoEditarCancelar.Visible := False;
 end;
 
@@ -605,6 +608,7 @@ begin
   FreeAndNil(Pedido);
   FreeAndNil(QryGrid);
   FreeAndNil(QryPesquisa);
+  FShapePedido.Free;
 end;
 
 procedure TfrmPrincipal.FormCreate(Sender: TObject);
