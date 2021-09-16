@@ -334,6 +334,9 @@ procedure TfrmPrincipal.CancelarPedido;
 var
   qry: TFDQuery;
 begin
+  if StrToInt(edtNumeroPedido.Text) = Pedido.ID_Pedido then
+    raise Exception.Create('Não é possível cancelar o pedido quando que está atualmente aberto!');
+
   qry := TFDQuery.Create(nil);
   try
     try
