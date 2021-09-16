@@ -636,6 +636,7 @@ object frmPrincipal: TfrmPrincipal
       TitleFont.Height = -11
       TitleFont.Name = 'Tahoma'
       TitleFont.Style = []
+      OnExit = dbgPedidoExit
       OnKeyDown = dbgPedidoKeyDown
       Columns = <
         item
@@ -748,6 +749,7 @@ object frmPrincipal: TfrmPrincipal
     end
   end
   object dtsPedidos: TDataSource
+    OnUpdateData = dtsPedidosUpdateData
     Left = 56
     Top = 88
   end

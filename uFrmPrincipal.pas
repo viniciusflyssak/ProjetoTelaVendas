@@ -67,6 +67,10 @@ type
     procedure dbgPedidoKeyDown(Sender: TObject; var Key: Word;
       Shift: TShiftState);
     procedure CriaShape;
+    procedure dtsPedidosUpdateData(Sender: TObject);
+    function VerificaExistencia(id_Pedido: Integer): Boolean;
+    function VerificaExistenciaItem(id_Pedido, id_Item: Integer): Boolean;
+    procedure dbgPedidoExit(Sender: TObject);
   private
     Pedido : TPedido;
     QryGrid : TFDQuery;
@@ -87,20 +91,13 @@ implementation
 {$R *.dfm}
 
 procedure TfrmPrincipal.AtualizaGrid;
-var
-  i: integer;
 begin
-  for i:= 0 to dbgPedido.Columns.Count - 1 do
-  begin
-    case i of
-      0 : dbgPedido.Columns.Items[i].Width:= 50;
-      1 : dbgPedido.Columns.Items[i].Width:= 140;
-      2 : dbgPedido.Columns.Items[i].Width:= 50;
-      3 : dbgPedido.Columns.Items[i].Width:= 80;
-      4 : dbgPedido.Columns.Items[i].Width:= 80;
-      5 : dbgPedido.Columns.Items[i].Width:= -1;
-    end;
-  end;
+  dbgPedido.Columns.Items[0].Width:= 50;
+  dbgPedido.Columns.Items[1].Width:= 130;
+  dbgPedido.Columns.Items[2].Width:= 50;
+  dbgPedido.Columns.Items[3].Width:= 80;
+  dbgPedido.Columns.Items[4].Width:= 80;
+  dbgPedido.Columns.Items[5].Width:= -1;
   edtTotal.Text := CurrToStr(Pedido.ValorTotal);
 end;
 
@@ -122,7 +119,7 @@ begin
     raise Exception.Create('Caracteres inválidos! digite apenas números!' + #13 + 'Obs: Para separar números decimais, utilize '','' ao invés de ''.''');
   end;
   i := Length(Pedido.Item);
-  edtCodProdutoExit(nil);
+  edtCodProdutoExit(btnAdicionar);
   Pedido.Item[i] := TItem.Create;
   Pedido.Item[i].ID_Produto := StrToInt(edtCodProduto.Text);
   Pedido.Item[i].Quantidade := StrToInt(edtQuantidade.Text);
@@ -130,7 +127,6 @@ begin
   Pedido.Item[i].VlrTotal := Pedido.Item[i].VlrUnitario * Pedido.Item[i].Quantidade;
   Pedido.ValorTotal := Pedido.ValorTotal + Pedido.Item[i].VlrTotal;
   FShapePedido.Append;
-  FShapePedido.FieldByName('ID_ITENS_PEDIDO').AsInteger := i;
   FShapePedido.FieldByName('ID_PRODUTO').AsInteger := Pedido.Item[i].ID_Produto;
   FShapePedido.FieldByName('DESCRICAO').AsString := edtNomeProduto.Text;
   FShapePedido.FieldByName('QUANTIDADE').AsInteger := Pedido.Item[i].Quantidade;
@@ -171,52 +167,124 @@ var
   qry: TFDQuery;
   i: integer;
 begin
-  qry := TFDQuery.Create(nil);
-  try
+  dbgPedidoExit(nil);
+  if VerificaExistencia(Pedido.ID_Pedido) then
+  begin
+    qry := TFDQuery.Create(nil);
     try
-      qry.Connection := DM.Connection;
-      DM.Connection.StartTransaction;
-      qry.SQL.Add('INSERT INTO PEDIDOS (DATA_EMISSAO, ID_CLIENTE, VALOR_TOTAL) VALUES (:pData, NULLIF(:pID_Cliente, 0), :pValor)');
-      qry.ParamByName('pData').Value := Date;
-      qry.ParamByName('pID_Cliente').Value := Pedido.ID_Cliente;
-      qry.ParamByName('pValor').Value := Pedido.ValorTotal;
-      qry.ExecSQL;
-      DM.Connection.Commit;
-    except
-      DM.Connection.Rollback;
-      raise Exception.Create('Erro ao salvar o pedido. Tente Novamente.');
-    end;
-    qry.SQL.Clear;
-    try
-      FShapePedido.First;
-      for i := 0 to FShapePedido.RecordCount - 1 do
-      begin
+      try
+        qry.Connection := DM.Connection;
         DM.Connection.StartTransaction;
-        qry.SQL.Add(' INSERT INTO ITENS_PEDIDO (ID_PEDIDO, ID_PRODUTO, QUANTIDADE, VALOR_UNITARIO, VALOR_TOTAL) ');
-        qry.SQL.Add(' VALUES (:pID_Pedido, :pID_Produto, :pQuantidade, :pValorUnitario, :pValorTotal) ');
+        qry.SQL.Add('UPDATE PEDIDOS SET ID_CLIENTE = NULLIF(:pID_Cliente, 0), VALOR_TOTAL = :pValor ');
+        qry.SQL.Add('WHERE ID_PEDIDO = :pID_Pedido ');
         qry.ParamByName('pID_Pedido').Value := Pedido.ID_Pedido;
-        qry.ParamByName('pID_Produto').Value := FShapePedido.FieldByName('ID_PRODUTO').AsInteger;
-        qry.ParamByName('pQuantidade').Value := FShapePedido.FieldByName('QUANTIDADE').AsInteger;
-        qry.ParamByName('pValorUnitario').Value := FShapePedido.FieldByName('VALOR_UNITARIO').AsFloat;
-        qry.ParamByName('pValorTotal').Value := FShapePedido.FieldByName('VALOR_TOTAL').AsFloat;
+        qry.ParamByName('pID_Cliente').Value := Pedido.ID_Cliente;
+        qry.ParamByName('pValor').Value := Pedido.ValorTotal;
         qry.ExecSQL;
         DM.Connection.Commit;
-        FShapePedido.Next;
+      except
+        DM.Connection.Rollback;
+        raise Exception.Create('Erro ao salvar o pedido. Tente Novamente.');
       end;
-    except
-      DM.Connection.Rollback;
+      qry.SQL.Clear;
+      try
+        FShapePedido.First;
+        for i := 0 to FShapePedido.RecordCount - 1 do
+        begin
+          if FShapePedido.FieldByName('ID_PRODUTO').AsInteger = 0 then
+            FShapePedido.Delete
+          else
+          begin
+            DM.Connection.StartTransaction;
+            if VerificaExistenciaItem(Pedido.ID_Pedido, FShapePedido.FieldByName('ID_ITENS_PEDIDO').AsInteger) then
+            begin
+              qry.SQL.Clear;
+              qry.SQL.Add(' UPDATE ITENS_PEDIDO SET QUANTIDADE = :pQuantidade, VALOR_UNITARIO = :pValorUnitario, VALOR_TOTAL = :pValorTotal ');
+              qry.SQL.Add(' WHERE ID_PEDIDO = :pID_Pedido AND ID_ITENS_PEDIDO = :pID_Itens_Pedido ');
+              qry.ParamByName('pID_Pedido').Value := Pedido.ID_Pedido;
+              qry.ParamByName('pID_Itens_Pedido').Value := FShapePedido.FieldByName('ID_ITENS_PEDIDO').AsInteger;
+              qry.ParamByName('pQuantidade').Value := FShapePedido.FieldByName('QUANTIDADE').AsInteger;
+              qry.ParamByName('pValorUnitario').Value := FShapePedido.FieldByName('VALOR_UNITARIO').AsFloat;
+              qry.ParamByName('pValorTotal').Value := FShapePedido.FieldByName('VALOR_TOTAL').AsFloat;
+            end
+            else
+            begin
+              qry.SQL.Clear;
+              qry.SQL.Add(' INSERT INTO ITENS_PEDIDO (ID_PEDIDO, ID_PRODUTO, QUANTIDADE, VALOR_UNITARIO, VALOR_TOTAL) ');
+              qry.SQL.Add(' VALUES (:pID_Pedido, :pID_Produto, :pQuantidade, :pValorUnitario, :pValorTotal) ');
+              qry.ParamByName('pID_Pedido').Value := Pedido.ID_Pedido;
+              qry.ParamByName('pID_Produto').Value := FShapePedido.FieldByName('ID_PRODUTO').AsInteger;
+              qry.ParamByName('pQuantidade').Value := FShapePedido.FieldByName('QUANTIDADE').AsInteger;
+              qry.ParamByName('pValorUnitario').Value := FShapePedido.FieldByName('VALOR_UNITARIO').AsFloat;
+              qry.ParamByName('pValorTotal').Value := FShapePedido.FieldByName('VALOR_TOTAL').AsFloat;
+            end;
+          end;
+          qry.ExecSQL;
+          DM.Connection.Commit;
+          FShapePedido.Next;
+        end;
+      except
+        DM.Connection.Rollback;
+        AtualizaGrid;
+        raise Exception.Create('Erro ao salvar o pedido. Tente Novamente.');
+      end;
+    finally
       AtualizaGrid;
-      raise Exception.Create('Erro ao salvar o pedido. Tente Novamente.');
+      FreeAndNil(qry);
     end;
-  finally
-    AtualizaGrid;
-    FreeAndNil(qry);
+  end
+  else
+  begin
+    qry := TFDQuery.Create(nil);
+    try
+      try
+        qry.Connection := DM.Connection;
+        DM.Connection.StartTransaction;
+        qry.SQL.Add('INSERT INTO PEDIDOS (DATA_EMISSAO, ID_CLIENTE, VALOR_TOTAL) VALUES (:pData, NULLIF(:pID_Cliente, 0), :pValor)');
+        qry.ParamByName('pData').Value := Date;
+        qry.ParamByName('pID_Cliente').Value := Pedido.ID_Cliente;
+        qry.ParamByName('pValor').Value := Pedido.ValorTotal;
+        qry.ExecSQL;
+        DM.Connection.Commit;
+      except
+        DM.Connection.Rollback;
+        raise Exception.Create('Erro ao salvar o pedido. Tente Novamente.');
+      end;
+      qry.SQL.Clear;
+      try
+        FShapePedido.First;
+        for i := 0 to FShapePedido.RecordCount - 1 do
+        begin
+          if FShapePedido.FieldByName('ID_PRODUTO').AsInteger = 0 then
+            FShapePedido.Delete
+          else
+          begin
+            DM.Connection.StartTransaction;
+            qry.SQL.Add(' INSERT INTO ITENS_PEDIDO (ID_PEDIDO, ID_PRODUTO, QUANTIDADE, VALOR_UNITARIO, VALOR_TOTAL) ');
+            qry.SQL.Add(' VALUES (:pID_Pedido, :pID_Produto, :pQuantidade, :pValorUnitario, :pValorTotal) ');
+            qry.ParamByName('pID_Pedido').Value := Pedido.ID_Pedido;
+            qry.ParamByName('pID_Produto').Value := FShapePedido.FieldByName('ID_PRODUTO').AsInteger;
+            qry.ParamByName('pQuantidade').Value := FShapePedido.FieldByName('QUANTIDADE').AsInteger;
+            qry.ParamByName('pValorUnitario').Value := FShapePedido.FieldByName('VALOR_UNITARIO').AsFloat;
+            qry.ParamByName('pValorTotal').Value := FShapePedido.FieldByName('VALOR_TOTAL').AsFloat;
+            qry.ExecSQL;
+            DM.Connection.Commit;
+          end;
+          FShapePedido.Next;
+        end;
+      except
+        DM.Connection.Rollback;
+        AtualizaGrid;
+        raise Exception.Create('Erro ao salvar o pedido. Tente Novamente.');
+      end;
+    finally
+      AtualizaGrid;
+      FreeAndNil(qry);
+    end;
   end;
 end;
 
 procedure TfrmPrincipal.btnPesquisaClienteClick(Sender: TObject);
-var
-  i: integer;
 begin
   dbgPesquisaProduto.Visible := False;
   dbgPesquisaCliente.Visible := True;
@@ -224,22 +292,15 @@ begin
   qryPesquisa.SQL.Add(' SELECT * FROM CLIENTES ');
   lblPesquisa.Caption := 'Clientes encontrados:';
   qryPesquisa.Open;
-  for i:= 0 to dbgPesquisaCliente.Columns.Count - 1 do
-  begin
-    case i of
-      0 : dbgPesquisaCliente.Columns.Items[i].Width:= 70;
-      1 : dbgPesquisaCliente.Columns.Items[i].Width:= 140;
-      2 : dbgPesquisaCliente.Columns.Items[i].Width:= 100;
-      3 : dbgPesquisaCliente.Columns.Items[i].Width:= 60;
-    end;
-  end;
+  dbgPesquisaCliente.Columns.Items[0].Width:= 70;
+  dbgPesquisaCliente.Columns.Items[1].Width:= 140;
+  dbgPesquisaCliente.Columns.Items[2].Width:= 100;
+  dbgPesquisaCliente.Columns.Items[3].Width:= 60;
   pnlPesquisa.BringToFront;
   pnlPesquisa.Visible := True;
 end;
 
 procedure TfrmPrincipal.btnPesquisaProdutoClick(Sender: TObject);
-var
-  i: integer;
 begin
   dbgPesquisaProduto.Visible := True;
   dbgPesquisaCliente.Visible := False;
@@ -247,14 +308,9 @@ begin
   qryPesquisa.SQL.Add(' SELECT * FROM PRODUTOS ');
   lblPesquisa.Caption := 'Produtos encontrados:';
   qryPesquisa.Open;
-  for i:= 0 to dbgPesquisaProduto.Columns.Count - 1 do
-  begin
-    case i of
-      0 : dbgPesquisaProduto.Columns.Items[i].Width:= 70;
-      1 : dbgPesquisaProduto.Columns.Items[i].Width:= 200;
-      2 : dbgPesquisaProduto.Columns.Items[i].Width:= 100;
-    end;
-  end;
+  dbgPesquisaProduto.Columns.Items[0].Width:= 70;
+  dbgPesquisaProduto.Columns.Items[1].Width:= 200;
+  dbgPesquisaProduto.Columns.Items[2].Width:= 100;
   pnlPesquisa.BringToFront;
   pnlPesquisa.Visible := True;
 end;
@@ -287,10 +343,10 @@ begin
       qry.ParamByName('pID_Pedido').Value := StrToInt(edtNumeroPedido.Text);
       qry.ExecSQL;
       if qry.RowsAffected = 0 then
-        raise Exception.Create('Pedido não encontrado!'); 
+        raise Exception.Create('Pedido não encontrado!');
       DM.Connection.Commit;
     except
-      DM.Connection.Rollback;      
+      DM.Connection.Rollback;
     end;
     qry.SQL.Clear;
     try
@@ -356,6 +412,11 @@ begin
           FShapePedido.FieldByName('VALOR_TOTAL').AsCurrency := QryGrid.FieldByName('VALOR_TOTAL').AsCurrency;
           FShapePedido.FieldByName('VALOR_UNITARIO').AsCurrency := QryGrid.FieldByName('VALOR_UNITARIO').AsCurrency;
           Pedido.ValorTotal := Pedido.ValorTotal + FShapePedido.FieldByName('VALOR_TOTAL').AsCurrency;
+          Pedido.Item[i] := TItem.Create;
+          Pedido.Item[i].ID_Produto := FShapePedido.FieldByName('ID_PRODUTO').AsInteger;
+          Pedido.Item[i].Quantidade := FShapePedido.FieldByName('QUANTIDADE').AsInteger;
+          Pedido.Item[i].VlrUnitario := FShapePedido.FieldByName('VALOR_UNITARIO').AsCurrency;
+          Pedido.Item[i].VlrTotal := FShapePedido.FieldByName('VALOR_TOTAL').AsCurrency;
           FShapePedido.Post;
           QryGrid.Next;
         end;
@@ -370,6 +431,7 @@ begin
   finally
     FreeAndNil(qry);
   end;
+  AtualizaGrid;
 end;
 
 procedure TfrmPrincipal.CriaShape;
@@ -385,8 +447,24 @@ begin
   FShapePedido.Open;
 end;
 
+procedure TfrmPrincipal.dbgPedidoExit(Sender: TObject);
+var
+  i: integer;
+begin
+  Pedido.ValorTotal := 0;
+  FShapePedido.First;
+  for i := 0 to FShapePedido.RecordCount - 1 do
+  begin
+    Pedido.ValorTotal := Pedido.ValorTotal + FShapePedido.FieldByName('VALOR_TOTAL').AsCurrency;
+    FShapePedido.Next;
+  end;
+  edtTotal.Text := CurrToStr(Pedido.ValorTotal);
+end;
+
 procedure TfrmPrincipal.dbgPedidoKeyDown(Sender: TObject; var Key: Word;
   Shift: TShiftState);
+var
+  qry: TFDQuery;
 begin
   if key = 46 then
   begin
@@ -395,9 +473,31 @@ begin
     begin
       Pedido.ValorTotal := Pedido.ValorTotal - FShapePedido.FieldByName('VALOR_TOTAL').AsCurrency;
       edtTotal.Text := CurrToStr(Pedido.ValorTotal);
+      if VerificaExistenciaItem(Pedido.ID_Pedido, FShapePedido.FieldByName('ID_ITENS_PEDIDO').AsInteger) then
+      begin
+        qry := TFDQuery.Create(nil);
+       try
+        qry.Connection := DM.Connection;
+        DM.Connection.StartTransaction;
+        qry.SQL.Add(' DELETE FROM ITENS_PEDIDO WHERE ID_PEDIDO = :pID_Pedido AND ID_ITENS_PEDIDO = :pID_Itens_Pedido');
+        qry.ParamByName('pID_Pedido').Value := Pedido.ID_Pedido;
+        qry.ParamByName('pID_Itens_Pedido').Value := FShapePedido.FieldByName('ID_ITENS_PEDIDO').AsInteger;
+        qry.ExecSQL;
+        if qry.RowsAffected = 0 then
+          raise Exception.Create('Pedido não encontrado!');
+        DM.Connection.Commit;
+      except
+        DM.Connection.Rollback;
+      end;
+      end;
       FShapePedido.Delete;
     end;
   end;
+end;
+
+procedure TfrmPrincipal.dtsPedidosUpdateData(Sender: TObject);
+begin
+  FShapePedido.FieldByName('VALOR_TOTAL').AsCurrency := FShapePedido.FieldByName('VALOR_UNITARIO').AsCurrency * FShapePedido.FieldByName('QUANTIDADE').AsCurrency;
 end;
 
 procedure TfrmPrincipal.edtCodClienteExit(Sender: TObject);
@@ -409,6 +509,7 @@ begin
     edtNomeCliente.Text := '';
     btnCancelarPedido.Visible := true;
     btnEditarPedido.Visible := true;
+    Pedido.ID_Cliente := 0;
     exit;
   end;
 
@@ -461,7 +562,8 @@ begin
     begin
       edtCodProduto.Text := qry.FieldByName('ID_PRODUTO').AsString;
       edtNomeProduto.Text := qry.FieldByName('DESCRICAO').AsString;
-      edtValor.Text := qry.FieldByName('PRECO').AsString;
+      if not(Sender = btnAdicionar) then
+        edtValor.Text := qry.FieldByName('PRECO').AsString;
     end
     else
     begin
@@ -503,23 +605,11 @@ begin
 end;
 
 procedure TfrmPrincipal.FormCreate(Sender: TObject);
-var
-  i: integer;
 begin
   Pedido := TPedido.Create;
   SetLength(Pedido.Item, 1);
   pnlPesquisa.Visible := False;
-  for i:= 0 to dbgPedido.Columns.Count - 1 do
-  begin
-    case i of
-      0 : dbgPedido.Columns.Items[i].Width:= 50;
-      1 : dbgPedido.Columns.Items[i].Width:= 150;
-      2 : dbgPedido.Columns.Items[i].Width:= 50;
-      3 : dbgPedido.Columns.Items[i].Width:= 70;
-      4 : dbgPedido.Columns.Items[i].Width:= 80;
-      5 : dbgPedido.Columns.Items[i].Width:= -1;
-    end;
-  end;
+  AtualizaGrid;
   pnlPedidoEditarCancelar.Visible := False;
 end;
 
@@ -540,6 +630,44 @@ begin
     qry.SQL.Add(' SELECT ID_PEDIDO FROM PEDIDOS ORDER BY ID_PEDIDO DESC LIMIT 1 ');
     qry.Open;
     Result := qry.FieldByName('ID_PEDIDO').AsInteger + 1;
+  finally
+    FreeAndNil(qry);
+  end;
+end;
+
+function TfrmPrincipal.VerificaExistencia(id_Pedido: Integer): Boolean;
+var
+  qry: TFDQuery;
+begin
+  Result := False;
+  qry := TFDQuery.Create(nil);
+  try
+    qry.Connection := DM.Connection;
+    qry.SQL.Add(' SELECT ID_PEDIDO FROM PEDIDOS WHERE ID_PEDIDO = :pId_Pedido ');
+    qry.ParamByName('pId_Pedido').Value := id_Pedido;
+    qry.Open;
+    if qry.RecordCount > 0 then
+      Result := True;
+  finally
+    FreeAndNil(qry);
+  end;
+end;
+
+function TfrmPrincipal.VerificaExistenciaItem(id_Pedido,
+  id_Item: Integer): Boolean;
+var
+  qry: TFDQuery;
+begin
+  Result := False;
+  qry := TFDQuery.Create(nil);
+  try
+    qry.Connection := DM.Connection;
+    qry.SQL.Add(' SELECT ID_PEDIDO FROM ITENS_PEDIDO WHERE ID_PEDIDO = :pId_Pedido AND ID_ITENS_PEDIDO = :pID_Itens_Pedido');
+    qry.ParamByName('pId_Pedido').Value := id_Pedido;
+    qry.ParamByName('pID_Itens_Pedido').Value := id_Item;
+    qry.Open;
+    if qry.RecordCount > 0 then
+      Result := True;
   finally
     FreeAndNil(qry);
   end;
